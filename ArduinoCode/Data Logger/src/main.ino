@@ -6,9 +6,20 @@
 #include <PubSubClient.h> //Home assistant
 #include "Privates.h" //Homeassistant 
 
+#define switchPin 16
+#define pumpPin 4
+#define moisturePin 36
+
 BH1750 lightMeter;
 BME280I2C bme;  
-float temp(NAN), hum(NAN), pres(NAN), lux(NAN);
+float temp(NAN), hum(NAN), pres(NAN), lux(NAN), moisture(NAN);
+int dryMoistureCalli = 3200; // Dry moisture threshold
+int wetMoistureCalli = 1200; // Wet moisture threshold
+int targetMoisture = 65;
+int overshoot = 4;
+int filterWeight = 85;
+bool pump_status = false;
+bool vattna = false;
 
 unsigned long previousTime = 0; 
 unsigned long passedTime = 0;
@@ -39,30 +50,56 @@ void setup()
   setupWiFi(); //Home assistant
   client.setServer(privates.broker, 1883); //Home assistant
   client.setCallback(callback);
+
+  pinMode(switchPin, INPUT_PULLDOWN);
+  pinMode(pumpPin, OUTPUT);
+  pinMode(moisturePin, INPUT);
+
 }
 
 void loop()
 {
-  printBME280Data();
+  //print sensor data
+  printSensorData();
+
+  //Pump control
+  if (moisture < targetMoisture - overshoot) 
+  { //
+    vattna = true;
+    pump_status = true;
+    Serial.print("Pump water ON:  ");
+    digitalWrite(pumpPin, HIGH);
+    delay(1);
+  }
+  else if (moisture > targetMoisture + overshoot) {
+    vattna = false;
+    pump_status = false;
+    Serial.print("Pump water OFF:  ");
+    digitalWrite(pumpPin, LOW);
+  }
+  else {
+    pump_status = vattna;
+    digitalWrite(pumpPin, vattna);
+    //Serial.print("Pump water vattna:  ");
+  }
+
   //Homeassistant
   passedTime = millis() / 1000.0;
-  if(passedTime - previousTime > 1.0)
-  {
-    publishMessage();
-    previousTime = passedTime;
-  }
+  if(passedTime - previousTime > 1.0) {publishMessage(); previousTime = passedTime;}
 }
 
-void printBME280Data()
+void printSensorData()
 {
-  
   BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
   BME280::PresUnit presUnit(BME280::PresUnit_Pa);
 
   bme.read(pres, temp, hum, tempUnit, presUnit);
   lux = lightMeter.readLightLevel();
-
-  Serial.print("Temp: ");
+  moisture = analogRead(moisturePin);
+  moisture = map(moisture, dryMoistureCalli, wetMoistureCalli, 0, 100); // Map the analog value to percentage
+  moisture = constrain(moisture, 0, 100); // Ensure moisture is within 0-100%
+  
+  Serial.print("\tTemp: ");
   Serial.print(temp);
   Serial.print("°"+ String(tempUnit == BME280::TempUnit_Celsius ? 'C' :'F'));
   Serial.print("\tHumidity: ");
@@ -70,10 +107,13 @@ void printBME280Data()
   Serial.print("% RH");
   Serial.print("\tPressure: ");
   Serial.print(pres);
-  Serial.print("Pa, ");
+  Serial.print(" Pa, ");
   Serial.print("\tLight: ");
   Serial.print(lux);
-  Serial.println(" lx");
+  Serial.print(" lx");
+  Serial.print("\tMoisture: ");
+  Serial.print(moisture);
+  Serial.println("%");
 
    delay(1000);
 }
@@ -117,6 +157,8 @@ void publishMessage() //Homeassistant
   client.publish(privates.topicPre, messages);
   snprintf(messages, sizeof(messages), "%f", lux);
   client.publish(privates.topicLux, messages);
+  snprintf(messages, sizeof(messages), "%f", moisture);
+  client.publish(privates.topicMoisture, messages);
 }
 
 void callback(char* topic, byte* payload, unsigned int length) //Homeassistant
