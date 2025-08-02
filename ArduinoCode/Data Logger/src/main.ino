@@ -127,19 +127,11 @@ unsigned long passedTime = 0;
 unsigned long previousPassedTime1,previousPassedTime2 = 0;
 unsigned long currentTime;
 unsigned long previousSensorRead = 0;
-unsigned long loopTime;
 int readInterval = 500;
-unsigned long lastSaveTime = 0;
 const unsigned long saveInterval = 60000; // 60 000 ms = 60 sekunder
 unsigned long lastEditTime = 0;
 //-----------------------------------------------------------------------
-//rotary encoder
-int counter = 1; 
-int aState = 0;
-int bState = 0;
-int aLastState = 0;  
 // Oled - Adafruit_SSD1306
-//-----------------------------------------------------------------------
 U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 long timeLastTouched = 0;
 const long timeBeforeDisable = 120000;
@@ -164,7 +156,6 @@ void setup()
   while(!bme.begin()){Serial.println("Could not find BME280 sensor!"); delay(1000);}
 
   currentTime = millis();
-  loopTime = currentTime;
 
   setupWiFi(); //Home assistant
   client.setServer(privates.broker, 1883); //Home assistant
