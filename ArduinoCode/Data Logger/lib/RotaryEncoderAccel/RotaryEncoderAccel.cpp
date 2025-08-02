@@ -63,22 +63,13 @@ int  RotaryEncoderAccel::getPosition() {
 void RotaryEncoderAccel::calculateDirection()
 {
   if (_positionExtPrev > _positionExt) { 
-    // Serial.print(", \t_positionExtPrev: ");
-    // Serial.print(_positionExtPrev);
-    // Serial.print(", \t_positionExt: ");
-    // Serial.println(_positionExt);
     _positionExtPrev = _positionExt;
     _direction = Direction::COUNTERCLOCKWISE;
    
   }  
   else if (_positionExtPrev < _positionExt) {  
-    // Serial.print(", \t_positionExtPrev: ");
-    // Serial.print(_positionExtPrev);
-    // Serial.print(", \t_positionExt: ");
-    // Serial.println(_positionExt);
      _positionExtPrev = _positionExt;
     _direction = Direction::CLOCKWISE;
-  
   } 
   else{
     _positionExtPrev = _positionExt;
@@ -152,18 +143,11 @@ float RotaryEncoderAccel::getRPM()
   {
     switch (_direction) {
       case Direction::CLOCKWISE:
-        
         rpm = 60000.0 / ((float)(t * 20 * 10));
-        // Serial.print("Clockwise");
-        // Serial.print(", \t\tRPM: ");
-        // Serial.print(rpm);
         if(rpm < 1.0) rpm = 1;
           return rpm;
       case Direction::COUNTERCLOCKWISE:
         rpm = -60000.0 / ((float)(t * 20 * 10));
-        // Serial.print("Counter_Clockwise");
-        // Serial.print(", \tRPM: ");
-        // Serial.print(rpm);
         if(rpm > -1.0) rpm = -1;
           return rpm;
     }

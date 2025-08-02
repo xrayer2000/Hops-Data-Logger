@@ -41,11 +41,7 @@ BME280I2C bme;
 float temp(NAN), hum(NAN), pres(NAN), lux(NAN);
 float moisture = 50.0;
 int newMoisture = 0;
-int dryMoistureCalli = 3200; // Dry moisture threshold
-int wetMoistureCalli = 1200; // Wet moisture threshold
-int targetMoisture = 70;
-int overshoot = 3;
-int filterWeight = 95;
+int rawMoisture = 0;
 bool pump_status = false;
 bool vattna = false;
 
@@ -112,8 +108,8 @@ void printDoubleAtWidth(double value, uint8_t width, char c);
 struct Mysettings{
   uint16_t targetMoisture = 70;
   boolean power = true;
-  uint16_t dry = 3200;
-  uint16_t wet = 1200;
+  uint16_t dryMoistureCalli = 3200;
+  uint16_t wetMoistureCalli = 1200;
   uint16_t overshoot = 3;
   uint16_t filterWeight = 95;
   uint16_t settingsCheckValue = SETTINGS_CHKVAL;
@@ -132,9 +128,9 @@ unsigned long previousPassedTime1,previousPassedTime2 = 0;
 unsigned long currentTime;
 unsigned long previousSensorRead = 0;
 unsigned long loopTime;
-int readInterval = 1000;
+int readInterval = 500;
 unsigned long lastSaveTime = 0;
-const unsigned long saveInterval = 5000; // 10 000 ms = 10 sekunder
+const unsigned long saveInterval = 60000; // 60 000 ms = 60 sekunder
 unsigned long lastEditTime = 0;
 //-----------------------------------------------------------------------
 //rotary encoder
@@ -261,7 +257,6 @@ void loop()
     
   //Save settings every 10 seconds if not rotated the encoder
   if (millis() - lastEditTime >= saveInterval) {
-    // Serial.println("\tSaving settings");
     sets_Save();
     lastEditTime = millis();
   }
@@ -275,23 +270,27 @@ void page_MenuRoot()
     cursorPos = 0;
     dispOffset = 0;
     changeValues[10];
-    initMenuPage(F("MAIN MENU"), 6);
+    initMenuPage(F("MAIN MENU"), 8);
     initPage = false;
   }
 
-  if(menuItemPrintable(1,1)){display.print(F("POWER             "));}
-  if(menuItemPrintable(1,2)){display.print(F("TARGET MOIST      "));}
-  if(menuItemPrintable(1,3)){display.print(F("DRY CALLIB        "));}
-  if(menuItemPrintable(1,4)){display.print(F("WET CALLIB        "));}
-  if(menuItemPrintable(1,5)){display.print(F("FILTER WEIGHT     "));}
-  if(menuItemPrintable(1,6)){display.print(F("HYSTERESIS        "));}
+  if(menuItemPrintable(1,1)){display.print(F("POWER              "));}
+  if(menuItemPrintable(1,2)){display.print(F("TARGET MOIST       "));}
+  if(menuItemPrintable(1,3)){display.print(F("SOIL MOISTURE      "));}
+  if(menuItemPrintable(1,4)){display.print(F("RAW SOIL MOIST     "));}
+  if(menuItemPrintable(1,5)){display.print(F("DRY RAW CALLIB     "));}
+  if(menuItemPrintable(1,6)){display.print(F("WET RAW CALLIB     "));}
+  if(menuItemPrintable(1,7)){display.print(F("FILTER WEIGHT      "));}
+  if(menuItemPrintable(1,8)){display.print(F("HYSTERESIS         "));}
 
   if(menuItemPrintable(13,1)){printOnOff(settings.power);}
   if(menuItemPrintable(13,2)){printUint32_tAtWidth(settings.targetMoisture, 5, '%');}
-  if(menuItemPrintable(13,3)){printUint32_tAtWidth(settings.dry, 5, ' ');}
-  if(menuItemPrintable(13,4)){printUint32_tAtWidth(settings.wet, 5, ' ');}
-  if(menuItemPrintable(13,5)){printUint32_tAtWidth(settings.filterWeight, 5, ' ');}
-  if(menuItemPrintable(13,6)){printUint32_tAtWidth(settings.overshoot, 5, ' ');}
+  if(menuItemPrintable(13,3)){printUint32_tAtWidth(moisture, 5, '%');}
+  if(menuItemPrintable(13,4)){printUint32_tAtWidth(rawMoisture, 5, '%');}
+  if(menuItemPrintable(13,5)){printUint32_tAtWidth(settings.dryMoistureCalli, 5, ' ');}
+  if(menuItemPrintable(13,6)){printUint32_tAtWidth(settings.wetMoistureCalli, 5, ' ');}
+  if(menuItemPrintable(13,7)){printUint32_tAtWidth(settings.filterWeight, 5, ' ');}
+  if(menuItemPrintable(13,8)){printUint32_tAtWidth(settings.overshoot, 5, ' ');}
       
   if(btnOk.PressReleased())
   {
@@ -300,13 +299,11 @@ void page_MenuRoot()
     {
       case 0: changeValues [0] = !changeValues [0]; edditing = !edditing; break; 
       case 1: changeValues [1] = !changeValues [1]; edditing = !edditing; break; 
-      case 2: changeValues [2] = !changeValues [2]; edditing = !edditing; break;
-      case 3: changeValues [3] = !changeValues [3]; edditing = !edditing; break; 
-      case 4: changeValues [4] = !changeValues [4]; edditing = !edditing; break;
+      case 4: changeValues [4] = !changeValues [4]; edditing = !edditing; break; 
       case 5: changeValues [5] = !changeValues [5]; edditing = !edditing; break;
+      case 6: changeValues [6] = !changeValues [6]; edditing = !edditing; break;
+      case 7: changeValues [7] = !changeValues [7]; edditing = !edditing; break;
     }
-    // Serial.print("\t, ");
-    // Serial.print(edditing ? "Edditing: " : "Not edditing: ");
 
     if(edditing) // If edditing is true, save the current cursor position and display offset
     {   
@@ -315,32 +312,20 @@ void page_MenuRoot()
       saveCursorPos = encoder.getPosition();
       saveDispOffset = dispOffset;
 
-      // Serial.print("saveCursorPos: ");
-      // Serial.print(saveCursorPos);
-      // Serial.print(", saveDispOffset: ");
-      // Serial.println(saveDispOffset);
-      
       encoder.setAccel(150, 5);
-      // Serial.print("Edditing settings");
-      // Serial.print(", SetAccel");
-      // Serial.print(", settings.targetMoisture: ");
-      // Serial.println(settings.targetMoisture);
     }
     else // If edditing is false, restore the cursor position and display offset
     {
       encoder.setPosition(saveCursorPos);
       dispOffset = saveDispOffset; 
-      // Serial.print("No edditing, Save settings");
-      // Serial.print(", settings.targetMoisture: ");
-      // Serial.println(settings.targetMoisture);
     }
   }
        if(changeValues[0]){*&settings.power = !*&settings.power; changeValues [0] = false; updateItemValue = true;}
   else if(changeValues[1])incrementDecrementInt(&settings.targetMoisture, 1, 0, 100);
-  else if(changeValues[2])incrementDecrementInt(&settings.dry, 1, 3000, 3500);
-  else if(changeValues[3])incrementDecrementInt(&settings.wet, 1, 800, 1300);
-  else if(changeValues[4])incrementDecrementInt(&settings.filterWeight, 1, 1, 100);
-  else if(changeValues[5])incrementDecrementInt(&settings.overshoot, 1, 1, 5);
+  else if(changeValues[4])incrementDecrementInt(&settings.dryMoistureCalli, 1, 2800, 3400);
+  else if(changeValues[5])incrementDecrementInt(&settings.wetMoistureCalli, 1, 600, 1300);
+  else if(changeValues[6])incrementDecrementInt(&settings.filterWeight, 1, 0, 100);
+  else if(changeValues[7])incrementDecrementInt(&settings.overshoot, 1, 0, 5);
   else 
     doPointerNavigation(); 
 }
@@ -386,9 +371,6 @@ void doPointerNavigation()
   int direction = round(encoder.getRPM());
 
   if (direction != 0) {
-    // Serial.print(",\t\tDirection: ");
-    // Serial.print(direction);
-    
     int newCursorPos = cursorPos + direction;
 
     // Clamp
@@ -409,36 +391,35 @@ void doPointerNavigation()
 
       printPointer();  // Only redraw when view actually changes
       timeLastTouched = millis(); // Update last touched time
-      
-      // Serial.print(", Display Offset: ");
-      // Serial.println(dispOffset);
     }
-    // Serial.print(",\t\tCursor Position: ");
-    // Serial.print(cursorPos);
   }
 }
 
 void incrementDecrementInt(uint16_t *v, uint16_t amount, uint16_t min, uint16_t max)
 {
-  int direction = encoder.getRPM();
-  
-  if (direction != 0) {
-  
-    // Serial.print(",\t\tDirection: ");
-    // Serial.print(direction);
-    // Serial.print(",\t\tCursor Position: ");
-    // Serial.print(cursorPos);
+    int direction = encoder.getRPM();
 
-    *v += direction * amount;
-    *v = constrain(*v, min, max);
-    // Serial.print(", Value changed: ");
-    // Serial.println(*v);
+    if (direction != 0) {
+        int target = direction * amount;
+        int newValue = *v + target;
 
-    updateItemValue = true;
-    timeLastTouched = millis();
-  }
-  delayMicroseconds(5);
+        if (newValue >= min && newValue <= max) {
+            *v = newValue;
+        }
+        else if (newValue < min) {
+            *v = min;
+        }
+        else {
+            *v = max;
+        }
+
+        updateItemValue = true;
+        timeLastTouched = millis();
+    }
+
+    delayMicroseconds(5);
 }
+
 
 void incrementDecrementFloat(float *v, float amount, float min, float max)
 {
@@ -566,7 +547,7 @@ void updateSettings()
   if(settings.power)
   {
     //Pump control
-    if (moisture < targetMoisture - overshoot) 
+    if (moisture < settings.targetMoisture - settings.overshoot) 
     { //
       vattna = true;
       pump_status = true;
@@ -574,7 +555,7 @@ void updateSettings()
       digitalWrite(pumpPin, HIGH);
       delay(1);
     }
-    else if (moisture > targetMoisture + overshoot) {
+    else if (moisture > settings.targetMoisture + settings.overshoot) {
       vattna = false;
       pump_status = false;
       //Serial.print("Pump water OFF:  ");
@@ -629,10 +610,10 @@ void updateSensorValues() {
       return;
     }
 
-    newMoisture = analogRead(moisturePin);
-    newMoisture = map(newMoisture, dryMoistureCalli, wetMoistureCalli, 0, 100); // Map the analog value to percentage
+    rawMoisture = analogRead(moisturePin);
+    newMoisture = mapFloat(rawMoisture, settings.dryMoistureCalli, settings.wetMoistureCalli, 0.0, 100.0); // Map the analog value to percentage
     newMoisture = constrain(newMoisture, 0, 100); // Ensure moisture is within 0-100%
-    moisture = (moisture * filterWeight + (100 - filterWeight) * newMoisture) / 100.0;
+    moisture = Filter(newMoisture, moisture); // Apply filter to smooth the value
   }
 }
 
@@ -695,4 +676,9 @@ void callback(char* topic, byte* payload, unsigned int length) //Homeassistant
     TopicArrived = true;
   }
 }
+
+float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
 
